@@ -1,6 +1,9 @@
 name: blogger
 
 on:
+  schedule:
+    # 평일(월~금) 오전 9시 35분 한국 시간 = 월~금 0시 35분 UTC
+    - cron: "35 0 * * 1-5"
   workflow_dispatch:
     inputs:
       draft:
