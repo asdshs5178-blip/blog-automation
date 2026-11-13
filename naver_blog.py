@@ -69,17 +69,27 @@ prompt = (
 
 client = anthropic.Anthropic()
 print("Claude API 호출:", today, weekday)
-with client.messages.stream(
-    model="claude-sonnet-5-5",
-    max_tokens=16000,
-    tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 8}],
-    messages=[{"role": "user", "content": prompt}],
-) as stream:
-    msg = stream.get_final_message()
+messages = [{"role": "user", "content": prompt}]
+text = ""
+for _ in range(6):
+    with client.messages.stream(
+        model="claude-sonnet-5-5",
+        max_tokens=32000,
+        tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 8}],
+        messages=messages,
+    ) as stream:
+        msg = stream.get_final_message()
+    print("stop_reason:", msg.stop_reason, [b.type for b in msg.content], flush=True)
+    text += "".join(b.text for b in msg.content if b.type == "text")
+    if msg.stop_reason != "pause_turn":
+        break
+    messages.append({"role": "assistant", "content": msg.content})
 
-text = "".join(b.text for b in msg.content if b.type == "text")
+start = text.rfind("{" + chr(34) + "posts" + chr(34))
+if start < 0:
+    start = text.find("{")
 try:
-    data = json.loads(text[text.find("{"): text.rfind("}") + 1])
+    data = json.loads(text[start: text.rfind("}") + 1])
 except Exception as e:
     print("JSON 해석 실패:", e)
     data = {"posts": []}
