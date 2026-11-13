@@ -2,6 +2,11 @@ name: blogger
 
 on:
   workflow_dispatch:
+    inputs:
+      draft:
+        description: "임시저장만 하기 (발행하지 않음)"
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -22,6 +27,7 @@ jobs:
           BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
           BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
           BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
+          BLOGGER_FORCE_DRAFT: ${{ inputs.draft }}
         run: python blogger_post.py
       - name: Save report
         if: always()
