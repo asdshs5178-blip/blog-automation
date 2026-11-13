@@ -9,13 +9,18 @@ permissions:
 jobs:
   generate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install anthropic requests
+      - name: Install
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-cjk
+          pip install anthropic requests playwright
+          playwright install --with-deps chromium
       - name: Generate posts
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -25,6 +30,6 @@ jobs:
         run: |
           git config user.name "blog-bot"
           git config user.email "blog-bot@users.noreply.github.com"
-          git add posts/ || true
+          git add -A posts index.html || true
           git diff --staged --quiet || git commit -m "posts $(TZ=Asia/Seoul date +%F)"
           git push
