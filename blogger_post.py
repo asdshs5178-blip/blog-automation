@@ -45,7 +45,7 @@ __POSTS__
 - "guaranteed", "always", "everyone qualifies" 같은 단정을 쓰지 않습니다. 다른 글의 문장을 복사하지 않습니다.
 
 [글 작성 규칙]
-- 영어 900~1,500단어. 사람이 쓴 담백한 영어. 1인칭은 사실일 때만. 이모지와 과한 느낌표를 쓰지 않습니다.
+- 영어 900~1,500단어. 1,500단어를 넘기지 않습니다. 사람이 쓴 담백한 영어. 1인칭은 사실일 때만. 이모지와 과한 느낌표를 쓰지 않습니다.
 - 쓰지 않는 표현: "In today's fast-paced world", "Whether you're... or...", "Let's dive in", "game-changer", "seamless", "navigate the complexities".
 - 구조: 첫 문단에 핵심 답 → h2 소제목 5~8개(필요하면 h3) → 비교는 표, 절차는 번호 목록 → 상황별 추천이나 흔한 실수 → 마지막 문단에 확인 기준일과 출처 기관명.
 - 첫 문단은 굵은 말(Short answer:, In short:, The quick version: 등)로 시작합니다. 즉 본문은 <p><b> 로 시작합니다.
@@ -343,13 +343,13 @@ if cid and secret and refresh:
         tok = requests.post("https://oauth2.googleapis.com/token", data={"client_id": cid, "client_secret": secret, "refresh_token": refresh, "grant_type": "refresh_token"}, timeout=30).json()
         auth = {"Authorization": "Bearer " + tok["access_token"]}
         api = "https://www.googleapis.com/blogger/v3/blogs/" + BLOG_ID + "/posts"
-        draft = bool(problems)
+        draft = bool(problems) or os.environ.get("BLOGGER_FORCE_DRAFT") == "true"
         made = requests.post(api, params={"isDraft": "true" if draft else "false"}, headers=auth, json={"kind": "blogger#post", "title": post["slug"], "content": body, "labels": labels}, timeout=60)
         made.raise_for_status()
         made = made.json()
         fixed = requests.patch(api + "/" + made["id"], headers=auth, json={"title": post["title"]}, timeout=60)
         post_url = made.get("url", "")
-        result = ("임시저장만 함 (" + ", ".join(problems) + ")") if draft else "발행됨"
+        result = ("임시저장만 함 (" + ", ".join(problems or ["시험 실행"]) + ")") if draft else "발행됨"
         if fixed.status_code >= 300:
             problems.append("제목을 전체 제목으로 바꾸지 못함")
         if not draft:
@@ -364,7 +364,7 @@ if cid and secret and refresh:
 bad = []
 for path in ("/p/about.html", "/p/privacy-policy.html", "/p/disclaimer.html", "/p/contact.html"):
     try:
-        if requests.get(BLOG_URL + path, headers=UA, timeout=30).status_code != 200:
+        if requests.get(BLOG_URL + path, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"}, timeout=30).status_code != 200:
             bad.append(path)
     except Exception:
         bad.append(path)
