@@ -44,6 +44,9 @@ __SPEC__
 [오늘 이미 쓴 글 - 주제가 겹치지 않게 합니다]
 __DONE__
 
+[이전에 이미 쓴 글 - 같은 주제나 같은 검색 의도로 다시 쓰지 않습니다. 같은 소재를 이어서 쓸 때는 이전 글과 다른 검색 의도만 다룹니다]
+__HISTORY__
+
 [오늘의 Google Trends 대한민국 RSS]
 __TRENDS__
 
@@ -233,6 +236,14 @@ def clean(name):
     return "".join(c for c in name if c.isalnum() or c == " ").strip()
 
 
+HIST = "history.txt"
+history = []
+if os.path.exists(HIST):
+    with open(HIST, encoding="utf-8") as f:
+        history = [line.strip() for line in f if line.strip()]
+history = [line for line in history if not line.startswith(today)]
+old_topics = NL.join("- " + line for line in history[-200:]) or "없음"
+
 trends = get_trends()
 posts = []
 raws = []
@@ -243,6 +254,7 @@ for i, spec in enumerate(SPECS, start=1):
         .replace("__WEEKDAY__", weekday)
         .replace("__SPEC__", spec)
         .replace("__DONE__", done)
+        .replace("__HISTORY__", old_topics)
         .replace("__TRENDS__", trends)
     )
     print("글", i, "작성 시작", flush=True)
@@ -403,6 +415,9 @@ index = (
 )
 with open("index.html", "w", encoding="utf-8") as f:
     f.write(index)
+
+with open(HIST, "w", encoding="utf-8") as f:
+    f.write(NL.join(history + [today + " | " + p["title"] for p in posts]) + NL)
 
 print("저장:", path, "/ 완성된 글:", len(posts), "편 / 사진:", image_count, "장")
 if len(posts) < len(SPECS):
