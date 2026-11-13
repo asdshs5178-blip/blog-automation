@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>2026-11-13 블로그 원고</title>
+<style>
+body{font-family:sans-serif;max-width:820px;margin:0 auto;padding:20px;background:#f0f2f5}
+.post{background:#fff;border-radius:12px;padding:24px;margin-bottom:24px}
+.badge{font-size:13px;color:#1f5ad6;font-weight:bold}
+.title{font-size:20px;font-weight:bold;margin:8px 0 12px}
+.btn{padding:10px 18px;border:0;border-radius:8px;background:#1f5ad6;color:#fff;font-size:14px;font-weight:bold;cursor:pointer;margin-right:8px}
+.body{border:1px solid #e3e3e3;border-radius:8px;padding:20px;margin-top:16px;background:#fff}
+.info{font-size:13px;color:#666;margin-top:12px;white-space:pre-wrap}
+</style></head><body>
+<h1>2026-11-13 (금) 블로그 원고</h1>
+<div class=post><div class=info></div></div>
+<script>
+function done(id){var b=document.getElementById(id);var o=b.textContent;b.textContent="복사됨";setTimeout(function(){b.textContent=o;},1500);}
+function ct(n){navigator.clipboard.writeText(document.getElementById("t"+n).textContent).then(function(){done("bt"+n);});}
+function cc(n){var el=document.getElementById("c"+n);var r=document.createRange();r.selectNodeContents(el);var s=window.getSelection();s.removeAllRanges();s.addRange(r);document.execCommand("copy");s.removeAllRanges();done("bc"+n);}
+</script></body></html>
