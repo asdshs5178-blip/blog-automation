@@ -282,21 +282,36 @@ if os.path.exists(HIST):
 # 2. 글 쓰기와 검수
 prompt = PROMPT.replace("__TODAY__", today).replace("__GROUPS__", NL.join(history[-40:]) or "없음").replace("__POSTS__", NL.join(published) or "없음")
 print("글 작성 시작", flush=True)
-raw = ask(prompt)
-post = parse(raw)
 problems = []
+raw = ""
+post = {}
+for attempt in range(3):
+    try:
+        raw = ask(prompt)
+    except Exception as e:
+        print("글 작성 오류:", e, flush=True)
+        continue
+    post = parse(raw)
+    if ok(post):
+        break
+    print("형식에 맞지 않아 다시 씁니다. 시도", attempt + 1, flush=True)
 if not ok(post):
-    raise SystemExit("형식에 맞는 글이 나오지 않았습니다.")
+    raise SystemExit("세 번 시도했지만 글이 만들어지지 않았습니다.")
 print("검수 시작:", post["title"], flush=True)
-try:
-    checked = parse(ask(VERIFY.replace("__TODAY__", today).replace("__DRAFT__", raw)))
-except Exception as e:
-    print("검수 오류:", e, flush=True)
-    checked = {}
-if ok(checked):
-    post = checked
-else:
-    problems.append("사실 검수를 마치지 못함")
+verified = False
+for attempt in range(3):
+    try:
+        checked = parse(ask(VERIFY.replace("__TODAY__", today).replace("__DRAFT__", raw)))
+    except Exception as e:
+        print("검수 오류:", e, flush=True)
+        checked = {}
+    if ok(checked):
+        post = checked
+        verified = True
+        break
+    print("검수 결과가 형식에 맞지 않아 다시 합니다. 시도", attempt + 1, flush=True)
+if not verified:
+    problems.append("사실 검수를 세 번 시도했지만 마치지 못해 초안 그대로 발행함. 숫자와 날짜를 직접 확인하세요")
 
 # 3. 본문 정리와 사진
 slots = []
@@ -345,13 +360,13 @@ if cid and secret and refresh:
         tok = requests.post("https://oauth2.googleapis.com/token", data={"client_id": cid, "client_secret": secret, "refresh_token": refresh, "grant_type": "refresh_token"}, timeout=30).json()
         auth = {"Authorization": "Bearer " + tok["access_token"]}
         api = "https://www.googleapis.com/blogger/v3/blogs/" + BLOG_ID + "/posts"
-        draft = bool(problems) or os.environ.get("BLOGGER_FORCE_DRAFT") == "true"
+        draft = os.environ.get("BLOGGER_FORCE_DRAFT") == "true"
         made = requests.post(api, params={"isDraft": "true" if draft else "false"}, headers=auth, json={"kind": "blogger#post", "title": post["slug"], "content": body, "labels": labels}, timeout=60)
         made.raise_for_status()
         made = made.json()
         fixed = requests.patch(api + "/" + made["id"], headers=auth, json={"title": post["title"]}, timeout=60)
         post_url = made.get("url", "")
-        result = ("임시저장만 함 (" + ", ".join(problems or ["시험 실행"]) + ")") if draft else "발행됨"
+        result = "임시저장만 함 (시험 실행)" if draft else "발행됨"
         if fixed.status_code >= 300:
             problems.append("제목을 전체 제목으로 바꾸지 못함")
         if not draft:
