@@ -1,10 +1,15 @@
 import os
 import html
+import random
+import shutil
 from datetime import datetime, timezone, timedelta
+from urllib.parse import quote
 
 import requests
 import anthropic
+from playwright.sync_api import sync_playwright
 
+NL = chr(10)
 KST = timezone(timedelta(hours=9))
 now = datetime.now(KST)
 today = now.strftime("%Y-%m-%d")
@@ -56,11 +61,12 @@ __TRENDS__
 - 말투: AI가 쓴 티가 나지 않는 자연스러운 블로그 말투. 문단은 2~4문장. "오늘", "어제" 대신 날짜를 씁니다.
 - 그림 이모지는 쓰지 않습니다. 소제목 앞에는 ✔ 나 ▶ 같은 단순 기호를 쓰고, 본문에는 ㅎㅎ ㅠㅠ ^^ 를 가끔, 규칙적이지 않게 씁니다.
 - 마크다운 기호는 쓰지 않습니다. 대괄호 빈칸 없이 바로 올릴 수 있는 완성본으로 씁니다.
-- 핵심 문장 6~10곳은 [[ 와 ]] 로 감쌉니다(첫 문단의 핵심 답 포함).
+- 핵심 문장 7~9곳은 [[ 와 ]] 로 감쌉니다(첫 문단의 핵심 답 포함). 6곳보다 적으면 안 됩니다.
 
 [출력 형식]
 조사를 마친 뒤 아래 형식으로만 출력합니다. 모든 줄은 @@로 시작하는 표식으로 시작하고, 표식 뒤에 한 칸 띄우고 내용을 한 줄로 씁니다. 다른 설명은 쓰지 않습니다.
 @@TITLE 글 제목
+@@TOPIC 사진 파일 이름에 쓸 짧은 주제 이름 (10자 안팎, 기호 없이)
 @@CATEGORY 카테고리
 @@P 본문 문단 (문단마다 한 줄)
 @@H 소제목
@@ -73,18 +79,58 @@ __TRENDS__
 @@SOURCE 출처 주소 (출처마다 한 줄)
 """
 
+STYLE_HINTS = [
+    "공책 줄무늬와 손글씨 느낌", "신문 1면 머리기사", "칠판과 분필", "영수증과 계산서", "달력과 체크 표시",
+    "굵은 색 블록을 겹친 포스터", "파스텔 톤 둥근 카드", "짙은 남색 바탕에 노란 강조", "크라프트지와 스탬프", "교통 표지판",
+    "서류철과 인덱스 탭", "타임라인 화살표", "큰 숫자를 주인공으로", "대각선으로 나눈 2색 배경", "모눈종이와 형광펜",
+    "티켓과 절취선", "말풍선 대화", "신호등 3색", "따뜻한 베이지와 벽돌색", "민트와 진회색",
+]
+
+IMG_PROMPT = """아래 블로그 글에 넣을 이미지 3장을 HTML로 만듭니다.
+
+[3장의 역할]
+1번 대표 이미지 (700x700): 제목의 핵심 키워드와 글이 주는 답이 한눈에 읽히는 큰 제목.
+2번 핵심 요약 카드 (700x700): 본문의 핵심 3~4가지를 정리.
+3번 비교·정리 카드 (700x820): 조건별 비교표, 순서, 체크리스트처럼 본문 내용을 정리.
+
+[규칙]
+- 이미지마다 완전한 HTML 문서 하나를 씁니다. 인라인 style 태그의 CSS만 쓰고 외부 파일, 스크립트, 사진, 로고는 쓰지 않습니다. 도형은 CSS로 그립니다.
+- html과 body는 margin 0, 가로 정확히 700px, 세로는 위에 적힌 높이, overflow hidden 으로 합니다.
+- 글꼴은 font-family: Noto Sans CJK KR, sans-serif 또는 Noto Serif CJK KR, serif 를 씁니다.
+- 이모지는 쓰지 않습니다. 본문에 없는 숫자나 내용은 넣지 않습니다.
+- 글자가 넘치거나 겹치거나 잘리지 않게 합니다. 문장은 짧게 줄이고, 바깥 여백을 40px 이상 두고, 큰 빈 공간이 남지 않게 채웁니다. 한 줄이 길면 글자 크기를 줄입니다.
+- 3장은 배경색, 레이아웃, 모티프가 서로 달라야 합니다. 글의 주제에서 따온 모티프를 씁니다.
+- 이번 디자인 방향(장마다 하나씩 참고): __STYLE__
+- 모든 이미지 하단에 작은 글씨로 "알아두면 쓸모있는 생활노트"를 넣습니다.
+
+[출력 형식]
+@@IMAGE 1
+(1번 HTML 문서)
+@@IMAGE 2
+(2번 HTML 문서)
+@@IMAGE 3
+(3번 HTML 문서)
+다른 설명은 쓰지 않습니다.
+
+[블로그 글]
+__POST__
+"""
+
 client = anthropic.Anthropic()
 
 
-def ask(prompt):
+def ask(prompt, search=True):
+    kwargs = {}
+    if search:
+        kwargs["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 6}]
     messages = [{"role": "user", "content": prompt}]
     text = ""
     for _ in range(6):
         with client.messages.stream(
             model="claude-sonnet-5-5",
             max_tokens=32000,
-            tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 6}],
             messages=messages,
+            **kwargs,
         ) as stream:
             msg = stream.get_final_message()
         print("stop_reason:", msg.stop_reason, flush=True)
@@ -120,6 +166,26 @@ def parse(text):
     return post
 
 
+def parse_images(text):
+    docs = []
+    cur = None
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("@@IMAGE"):
+            cur = []
+            docs.append(cur)
+            continue
+        if s.startswith("```"):
+            continue
+        if cur is not None:
+            cur.append(line)
+    return [NL.join(d) for d in docs if "".join(d).strip()]
+
+
+def clean(name):
+    return "".join(c for c in name if c.isalnum() or c == " ").strip()
+
+
 trends = get_trends()
 posts = []
 raws = []
@@ -140,12 +206,45 @@ for i, spec in enumerate(SPECS, start=1):
         raw = ""
     post = parse(raw)
     post["number"] = i
+    post["images"] = []
     if post.get("title") and len(post["blocks"]) >= 8:
         posts.append(post)
         print("글", i, "완료:", post["title"], flush=True)
     else:
         raws.append(raw)
         print("글", i, "실패: 형식에 맞는 글이 나오지 않았습니다.", flush=True)
+
+img_dir = "posts/" + today
+shutil.rmtree(img_dir, ignore_errors=True)
+os.makedirs(img_dir, exist_ok=True)
+jobs = []
+for p in posts:
+    body = p["title"] + NL + NL.join(t for _, t in p["blocks"])
+    styles = " / ".join(random.sample(STYLE_HINTS, 3))
+    print("글", p["number"], "이미지 작성 시작:", styles, flush=True)
+    try:
+        docs = parse_images(ask(IMG_PROMPT.replace("__STYLE__", styles).replace("__POST__", body), search=False))[:3]
+    except Exception as e:
+        print("글", p["number"], "이미지 API 오류:", e, flush=True)
+        docs = []
+    topic = clean(p.get("topic") or p["title"])[:20].strip() or ("글" + str(p["number"]))
+    for k, doc in enumerate(docs, start=1):
+        name = topic + " " + str(k) + "번사진.png"
+        jobs.append((p, name, doc, 700 if k < 3 else 820))
+
+if jobs:
+    try:
+        with sync_playwright() as pw:
+            br = pw.chromium.launch()
+            pg = br.new_page(viewport={"width": 700, "height": 820})
+            for p, name, doc, h in jobs:
+                pg.set_content(doc, wait_until="load")
+                pg.screenshot(path=img_dir + "/" + name, clip={"x": 0, "y": 0, "width": 700, "height": h})
+                p["images"].append(name)
+            br.close()
+    except Exception as e:
+        print("이미지 캡처 오류:", e, flush=True)
+image_count = sum(len(p["images"]) for p in posts)
 
 STYLES = {
     "h": "font-size:24px;font-weight:bold;color:#1f5ad6;margin:28px 0 10px",
@@ -165,16 +264,20 @@ def render(post):
     return "".join(out)
 
 
+HEAD = "<meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1'><meta name='robots' content='noindex, nofollow'>"
+
 page = """<!DOCTYPE html>
-<html lang="ko"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="ko"><head>__HEAD__
 <title>__TODAY__ 블로그 원고</title>
 <style>
 body{font-family:sans-serif;max-width:820px;margin:0 auto;padding:20px;background:#f0f2f5}
 .post{background:#fff;border-radius:12px;padding:24px;margin-bottom:24px}
 .badge{font-size:13px;color:#1f5ad6;font-weight:bold}
 .title{font-size:20px;font-weight:bold;margin:8px 0 12px}
-.btn{padding:10px 18px;border:0;border-radius:8px;background:#1f5ad6;color:#fff;font-size:14px;font-weight:bold;cursor:pointer;margin-right:8px}
+.btn{padding:10px 18px;border:0;border-radius:8px;background:#1f5ad6;color:#fff;font-size:14px;font-weight:bold;cursor:pointer;margin:0 8px 8px 0}
+.gallery{display:flex;gap:10px;margin:14px 0 6px;align-items:flex-start}
+.gallery img{width:100%;border:1px solid #ddd;border-radius:6px;display:block}
+.gallery a{flex:1}
 .body{border:1px solid #e3e3e3;border-radius:8px;padding:20px;margin-top:16px;background:#fff}
 .info{font-size:13px;color:#666;margin-top:12px;white-space:pre-wrap;word-break:break-all}
 </style></head><body>
@@ -184,33 +287,53 @@ __POSTS__
 function done(id){var b=document.getElementById(id);var o=b.textContent;b.textContent="복사됨";setTimeout(function(){b.textContent=o;},1500);}
 function ct(n){navigator.clipboard.writeText(document.getElementById("t"+n).textContent).then(function(){done("bt"+n);});}
 function cc(n){var el=document.getElementById("c"+n);var r=document.createRange();r.selectNodeContents(el);var s=window.getSelection();s.removeAllRanges();s.addRange(r);document.execCommand("copy");s.removeAllRanges();done("bc"+n);}
+function dl(n){var a=document.querySelectorAll("#g"+n+" a");for(var i=0;i<a.length;i++){(function(x,k){setTimeout(function(){x.click();},k*600);})(a[i],i);}}
 </script></body></html>"""
 
-NL = chr(10)
 posts_html = ""
 for p in posts:
     n = str(p["number"])
     info = "키워드: " + p.get("keywords", "")
     info += NL + "고른 이유: " + p.get("reason", "")
     info += NL + "주의할 점: " + p.get("note", "")
+    info += NL + "사진 위치: 1번은 맨 위, 2번과 3번은 관련 소제목 내용 끝"
     info += NL + "출처: " + NL + NL.join(p["sources"])
+    gallery = ""
+    if p["images"]:
+        gallery = "<button class=btn onclick=dl(" + n + ")>사진 3장 저장</button><div class=gallery id=g" + n + ">"
+        for name in p["images"]:
+            src = today + "/" + quote(name)
+            gallery += "<a href='" + src + "' download='" + html.escape(name) + "'><img src='" + src + "' alt=''></a>"
+        gallery += "</div>"
     posts_html += (
         "<div class=post><div class=badge>" + n + "번 · " + html.escape(p.get("category", "")) + "</div>"
         + "<div class=title id=t" + n + ">" + html.escape(p["title"], quote=False) + "</div>"
         + "<button class=btn id=bt" + n + " onclick=ct(" + n + ")>제목 복사</button>"
         + "<button class=btn id=bc" + n + " onclick=cc(" + n + ")>본문+태그 복사</button>"
+        + gallery
         + "<div class=body id=c" + n + ">" + render(p) + "</div>"
         + "<div class=info>" + html.escape(info) + "</div></div>"
     )
 for raw in raws:
     posts_html += "<div class=post><div class=badge>만들지 못한 글의 원문</div><div class=info>" + html.escape(raw) + "</div></div>"
 
-page = page.replace("__TODAY__", today).replace("__WEEKDAY__", weekday).replace("__POSTS__", posts_html)
-os.makedirs("posts", exist_ok=True)
+page = page.replace("__HEAD__", HEAD).replace("__TODAY__", today).replace("__WEEKDAY__", weekday).replace("__POSTS__", posts_html)
 path = "posts/" + today + ".html"
 with open(path, "w", encoding="utf-8") as f:
     f.write(page)
 
-print("저장:", path, "/ 완성된 글:", len(posts), "편")
+files = sorted((f for f in os.listdir("posts") if f.endswith(".html")), reverse=True)
+links = "".join("<li><a href='posts/" + f + "'>" + f[:-5] + " 원고</a></li>" for f in files)
+index = (
+    "<!DOCTYPE html><html lang='ko'><head>" + HEAD + "<title>블로그 원고</title></head>"
+    + "<body style='font-family:sans-serif;max-width:600px;margin:40px auto;padding:0 20px;font-size:18px;line-height:2'>"
+    + "<h1>블로그 원고</h1><ul>" + links + "</ul></body></html>"
+)
+with open("index.html", "w", encoding="utf-8") as f:
+    f.write(index)
+
+print("저장:", path, "/ 완성된 글:", len(posts), "편 / 사진:", image_count, "장")
 if len(posts) < len(SPECS):
     raise SystemExit("일부 글이 만들어지지 않았습니다.")
+if image_count < 3 * len(posts):
+    raise SystemExit("일부 사진이 만들어지지 않았습니다.")
