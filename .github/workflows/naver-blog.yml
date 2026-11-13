@@ -1,6 +1,9 @@
 name: naver-blog
 
 on:
+  schedule:
+    # 평일(월~금) 오전 8시 47분 한국 시간 = 일~목 23시 47분 UTC
+    - cron: "47 23 * * 0-4"
   workflow_dispatch:
 
 permissions:
