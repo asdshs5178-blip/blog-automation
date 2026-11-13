@@ -16,6 +16,7 @@ BLOG_ID = "6291295349653158917"
 BLOG_URL = "https://everydaykoreanote.blogspot.com"
 HIST = "blogger_history.txt"
 UA = {"User-Agent": "EverydayKoreaNotesBot/1.0 (personal blog automation)"}
+BROWSER = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"}
 
 PROMPT = """오늘은 __TODAY__ (한국 시간)입니다. 블로그스팟 블로그 "Everyday Korea Notes"(https://everydaykoreanote.blogspot.com/)에 올릴 영어 글 1편을 씁니다.
 
@@ -72,6 +73,7 @@ VERIFY = """오늘은 __TODAY__ 입니다. 아래는 영어 블로그 글의 초
 - 숫자, 날짜, 요금, 시간, 자격 조건, 기관명, 서비스 이름을 하나씩 대조합니다. 공식 출처에서 현재 기준으로 확인된 내용만 남깁니다.
 - 확인되지 않은 내용, 출처끼리 다른 내용, 낡은 내용은 맞게 고치거나 문장째 지웁니다. 추정으로 채우지 않습니다.
 - 글의 구조, 말투, 분량(900~1,500단어), <p><b> 로 시작하는 첫 문단, <p><i>...</i></p> 인 마지막 문단, [[PHOTO: ...]] 줄을 유지합니다.
+- 본문이 1,500단어를 넘으면 덜 중요한 설명과 반복을 줄여 1,500단어 이하로 맞춥니다. 확인된 핵심 숫자와 절차는 남깁니다.
 - 검수를 마친 글 전체를 초안과 같은 @@ 형식으로 다시 출력합니다. 다른 설명은 쓰지 않습니다. @@NOTE_KO 에는 검수에서 고치거나 뺀 내용을 한국어 한 문장으로 적습니다.
 
 [초안]
@@ -363,11 +365,17 @@ if cid and secret and refresh:
 # 6. 필수 페이지 점검과 보고
 bad = []
 for path in ("/p/about.html", "/p/privacy-policy.html", "/p/disclaimer.html", "/p/contact.html"):
-    try:
-        if requests.get(BLOG_URL + path, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"}, timeout=30).status_code != 200:
-            bad.append(path)
-    except Exception:
+    for attempt in range(3):
+        try:
+            code = requests.get(BLOG_URL + path, headers=BROWSER, timeout=30).status_code
+        except Exception:
+            code = 0
+        if code == 200:
+            break
+    if code in (404, 410):
         bad.append(path)
+    elif code != 200:
+        print("필수 페이지 확인 못 함(서버 응답 " + str(code) + "):", path, flush=True)
 report = [
     result + (" " + post_url if post_url else ""),
     post["title"] + " (주제군 " + post.get("group", "?") + ", 라벨: " + ", ".join(labels) + ")",
