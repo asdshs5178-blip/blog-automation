@@ -1,4 +1,5 @@
 import os
+import time
 import json
 import html
 import base64
@@ -61,11 +62,20 @@ __POSTS__
 @@LABELS 라벨 1~3개를 쉼표로 (Transport, Travel Basics, Culture & Etiquette, Money, Connectivity, Itineraries, Food & Places, Living in Korea 중에서)
 @@DESC 검색 설명 영어 120~150자
 @@GROUP 주제군 글자 하나 (A, B, C, E)
+@@TITLE_KO 제목을 한국어로 옮긴 것
 @@SUMMARY_KO 무엇을 안내했는지와 핵심 숫자를 담은 한국어 요약 한 문장
+@@OUTLINE_KO 본문 소제목들을 한국어로 옮겨 " / " 로 이은 한 줄
 @@NOTE_KO 주의할 점 한국어 한 문장 (확인하지 못해 뺀 내용, 출처가 엇갈린 부분, 이 글의 정보가 낡는 날짜. 없으면 특이사항 없음)
 @@BODY
 (본문 HTML)
 @@END
+"""
+
+REPAIR = """아래는 형식이 어긋난 블로그 글 출력입니다. 내용은 바꾸지 말고 아래 형식으로만 다시 출력합니다. 다른 설명은 쓰지 않습니다.
+@@TITLE, @@SLUG, @@LABELS, @@DESC, @@GROUP, @@TITLE_KO, @@SUMMARY_KO, @@OUTLINE_KO, @@NOTE_KO 를 각각 한 줄씩 쓰고, 그 다음 줄에 @@BODY, 그 아래에 본문 HTML 전체(<p><b> 로 시작), 마지막 줄에 @@END 를 씁니다.
+
+[출력]
+__RAW__
 """
 
 VERIFY = """오늘은 __TODAY__ 입니다. 아래는 영어 블로그 글의 초안입니다. 발행 전에 사실 검수를 합니다.
@@ -134,7 +144,7 @@ def parse(text):
 
 
 def ok(post):
-    return bool(post.get("title") and post.get("slug") and len(post.get("body", "")) > 2000)
+    return bool(post.get("title") and post.get("slug") and len(post.get("body", "")) > 1500)
 
 
 ALLOWED = {"p", "h2", "h3", "ul", "ol", "li", "b", "i", "a", "table", "tbody", "tr", "th", "td"}
@@ -285,18 +295,26 @@ print("글 작성 시작", flush=True)
 problems = []
 raw = ""
 post = {}
-for attempt in range(3):
+for attempt in range(5):
     try:
         raw = ask(prompt)
     except Exception as e:
-        print("글 작성 오류:", e, flush=True)
+        print("글 작성 오류, 1분 뒤 다시 시도:", e, flush=True)
+        time.sleep(60)
         continue
     post = parse(raw)
     if ok(post):
         break
-    print("형식에 맞지 않아 다시 씁니다. 시도", attempt + 1, flush=True)
+    print("형식에 맞지 않아 형식만 고쳐 봅니다. 시도", attempt + 1, flush=True)
+    try:
+        fixed = parse(ask(REPAIR.replace("__RAW__", raw)))
+        if ok(fixed):
+            post = fixed
+            break
+    except Exception as e:
+        print("형식 고치기 오류:", e, flush=True)
 if not ok(post):
-    raise SystemExit("세 번 시도했지만 글이 만들어지지 않았습니다.")
+    raise SystemExit("다섯 번 시도했지만 글이 만들어지지 않았습니다. API 크레딧과 연결 상태를 확인하세요.")
 print("검수 시작:", post["title"], flush=True)
 verified = False
 for attempt in range(3):
@@ -391,9 +409,10 @@ for path in ("/p/about.html", "/p/privacy-policy.html", "/p/disclaimer.html", "/
         bad.append(path)
     elif code != 200:
         print("필수 페이지 확인 못 함(서버 응답 " + str(code) + "):", path, flush=True)
+GROUPS = {"A": "여행자 실용 안내", "B": "문화·예절·음식", "C": "지역별 여행 계획", "D": "직접 가 본 곳", "E": "거주자 주제"}
 report = [
     result + (" " + post_url if post_url else ""),
-    post["title"] + " (주제군 " + post.get("group", "?") + ", 라벨: " + ", ".join(labels) + ")",
+    (post.get("title_ko", "") + " — " if post.get("title_ko") else "") + post["title"] + " (주제군: " + GROUPS.get(post.get("group", ""), post.get("group", "?")) + ", 라벨: " + ", ".join(labels) + ")",
     post.get("summary_ko", ""),
     "발행 글 " + str(total) + "편, 20편까지 " + str(max(0, 20 - total)) + "편 남음. 필수 페이지: " + ("모두 열림" if not bad else "안 열림 " + ", ".join(bad)) + ". 영어 " + str(words) + "단어, 사진 " + str(photos) + "장.",
     post.get("note_ko", "특이사항 없음") + (" / 자체 검수: " + ", ".join(problems) if problems else ""),
@@ -408,7 +427,8 @@ page = (
     + "<h1>" + today + " Everyday Korea Notes 보고</h1><ol style='background:#f3f6fa;padding:16px 16px 16px 36px;border-radius:8px'>"
     + "".join("<li>" + html.escape(x) + "</li>" for x in report) + "</ol>"
     + "<p style='color:#666;font-size:13px'>주소용 짧은 제목: " + html.escape(post["slug"]) + " / 검색 설명: " + html.escape(post.get("desc", "")) + "</p>"
-    + "<hr><h1>" + html.escape(post["title"]) + "</h1>" + body + "</body></html>"
+    + "<p><b>글 구성:</b> " + html.escape(post.get("outline_ko", "")) + "</p>"
+    + "<hr><p style='color:#666'>아래는 블로그에 올라간 영어 원문입니다.</p><h1>" + html.escape(post["title"]) + "</h1>" + body + "</body></html>"
 )
 with open("blogger/" + today + ".html", "w", encoding="utf-8") as f:
     f.write(page)
