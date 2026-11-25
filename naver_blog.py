@@ -30,10 +30,8 @@ def get_trends():
 
 
 SPECS = [
-    "실시간 이슈 글 (카테고리: 실시간 뉴스). 아래 트렌드에서 정보 글로 풀 수 있는 가장 높은 순위의 주제를 고릅니다. 연예인, 스포츠 경기, 정치 공방, 사건·사고, 특정 개인 이야기는 건너뜁니다. 뉴스 내용을 옮기지 말고 그 뉴스를 본 사람이 다음에 검색할 말(대상 조회, 신청 방법, 기간 등)을 씁니다. 독자가 지금 결정하거나 해야 할 일이 분명한 이슈만 고르고, 그런 이슈가 없으면 억지로 키우지 말고 꾸준히 검색되는 정보 주제로 대신합니다(그 이유를 @@REASON에 적습니다). 제목은 검색형으로 씁니다.",
-    post2 + " 글 (카테고리: " + post2 + "). 모르는 사람이 많지만 알면 도움이 되는 생활 정보·제도·꿀팁을 고릅니다. 40대 이상이 자주 찾는 주제(세금, 건강보험, 연금, 지원금, 생활 제도)도 번갈아 다룹니다. 제목은 검색형으로 씁니다.",
-    "조회수 기대 글 (카테고리: 생활정보). 아래 '월별 시기 주제'와 검색 수요를 따져, 앞으로 몇 주 동안 많은 사람이 검색할 주제를 고릅니다. 날짜가 정해진 주제(신청 기간, 납부 기간, 명절, 시험)는 시작 1~2주 전에 다룹니다. 신청 방법, 대상 조회, 계산 방법처럼 검색한 뒤 바로 할 일이 있는 주제를 우선합니다. 제목은 검색형으로 씁니다.",
-    "조회수 기대 글 (카테고리: 생활정보). 3번과 다른 소재로, 검색 수요가 큰 생활 주제를 고릅니다. 이 글만 제목을 홈판형으로 씁니다: 핵심 키워드는 넣되 궁금증, 공감, 자주 하는 실수, 손해를 피하는 법 중 하나를 살립니다(예: \"에어컨 전기요금, 하루 종일 켰다가 놀란 이유\"). 사실 안에서만 궁금증을 만들고, 제목이 약속한 답은 본문에 반드시 있어야 합니다.",
+    "조회수 기대 글 (카테고리: 생활정보). 아래 '월별 시기 주제'와 검색 수요를 따져, 앞으로 몇 주 동안 많은 사람이 검색할 주제를 고릅니다. 날짜가 정해진 주제(신청 기간, 납부 기간, 명절, 시험)는 시작 1~2주 전에 다룹니다. 신청 방법, 대상 조회, 계산 방법처럼 검색한 뒤 바로 할 일이 있는 주제를 우선합니다. 오늘 트렌드에 정보 글로 풀 수 있는 큰 이슈(연예·스포츠·정치·사건 제외)가 있으면 그것을 우선해도 됩니다. 제목은 검색형으로 씁니다.",
+    "조회수 기대 글 (카테고리: 생활정보). 1번과 다른 소재로, 검색 수요가 큰 생활 주제(세금, 건강보험, 연금, 지원금, 생활 제도, 생활 꿀팁)를 고릅니다. 이 글만 제목을 홈판형으로 씁니다: 핵심 키워드는 넣되 궁금증, 공감, 자주 하는 실수, 손해를 피하는 법 중 하나를 살립니다(예: \"에어컨 전기요금, 하루 종일 켰다가 놀란 이유\"). 사실 안에서만 궁금증을 만들고, 제목이 약속한 답은 본문에 반드시 있어야 합니다.",
 ]
 
 PROMPT = """오늘은 __TODAY__ (__WEEKDAY__요일)입니다.
@@ -175,7 +173,7 @@ __POST__
 client = anthropic.Anthropic()
 
 
-def ask(prompt, search=True):
+def ask(prompt, search=True, model="claude-sonnet-5-5"):
     kwargs = {}
     if search:
         kwargs["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 8}]
@@ -183,7 +181,7 @@ def ask(prompt, search=True):
     text = ""
     for _ in range(6):
         with client.messages.stream(
-            model="claude-sonnet-5-5",
+            model=model,
             max_tokens=32000,
             messages=messages,
             **kwargs,
@@ -324,7 +322,7 @@ for p in posts:
     styles = " / ".join(random.sample(STYLE_HINTS, 3))
     print("글", p["number"], "이미지 작성 시작:", styles, flush=True)
     try:
-        docs = parse_images(ask(IMG_PROMPT.replace("__STYLE__", styles).replace("__POST__", body), search=False))[:3]
+        docs = parse_images(ask(IMG_PROMPT.replace("__STYLE__", styles).replace("__POST__", body), search=False, model="claude-haiku-5-5"))[:3]
     except Exception as e:
         print("글", p["number"], "이미지 API 오류:", e, flush=True)
         docs = []
