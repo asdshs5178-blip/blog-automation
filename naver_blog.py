@@ -338,10 +338,11 @@ if jobs:
             br = pw.chromium.launch()
             pg = br.new_page(viewport={"width": 700, "height": 820})
             for p, name, doc, h in jobs:
+                pg.set_viewport_size({"width": 700, "height": h})
                 pg.set_content(doc, wait_until="load")
                 pg.add_style_tag(content="html,body{overflow:visible !important;height:auto !important;max-height:none !important}")
                 pg.evaluate("document.body.style.minHeight='" + str(h) + "px'")
-                real = pg.evaluate("Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)")
+                real = pg.evaluate("Math.ceil(Math.max(document.body.getBoundingClientRect().height, document.documentElement.scrollHeight))")
                 limit = h if h == 700 else 1300
                 if real > limit:
                     z = round(limit / real, 4)
