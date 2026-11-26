@@ -149,7 +149,8 @@ IMG_PROMPT = """아래 블로그 글에 넣을 이미지 3장을 HTML로 만듭�
 
 [규칙]
 - 이미지마다 완전한 HTML 문서 하나를 씁니다. 인라인 style 태그의 CSS만 쓰고 외부 파일, 스크립트, 사진, 로고는 쓰지 않습니다. 도형은 CSS로 그립니다.
-- html과 body는 margin 0, 가로 정확히 700px, 세로는 위에 적힌 높이, overflow hidden 으로 합니다.
+- html과 body는 margin 0, 가로 정확히 700px. 세로는 위에 적힌 높이를 min-height 로만 두고, height 고정이나 overflow hidden 은 쓰지 않습니다(내용이 잘립니다). 3번은 내용이 많으면 세로로 더 길어져도 됩니다(최대 1300px). 1번과 2번은 반드시 700px 안에 들어가게 내용을 줄입니다.
+- 하단 문구 "알아두면 쓸모있는 생활노트"는 position:absolute 로 띄우지 말고, 내용 맨 아래에 흐름대로 넣고 위쪽 여백을 둡니다. 다른 요소도 position:absolute 로 겹치게 배치하지 않습니다.
 - 글꼴은 font-family: Noto Sans CJK KR, sans-serif 또는 Noto Serif CJK KR, serif 를 씁니다.
 - 이모지는 쓰지 않습니다. 본문에 없는 숫자나 내용은 넣지 않습니다.
 - 글자가 넘치거나 겹치거나 잘리지 않게 합니다. 문장은 짧게 줄이고, 바깥 여백을 40px 이상 두고, 큰 빈 공간이 남지 않게 채웁니다. 한 줄이 길면 글자 크기를 줄입니다.
@@ -338,7 +339,18 @@ if jobs:
             pg = br.new_page(viewport={"width": 700, "height": 820})
             for p, name, doc, h in jobs:
                 pg.set_content(doc, wait_until="load")
-                pg.screenshot(path=img_dir + "/" + name, clip={"x": 0, "y": 0, "width": 700, "height": h})
+                pg.add_style_tag(content="html,body{overflow:visible !important;height:auto !important;max-height:none !important}")
+                pg.evaluate("document.body.style.minHeight='" + str(h) + "px'")
+                real = pg.evaluate("Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)")
+                limit = h if h == 700 else 1300
+                if real > limit:
+                    z = round(limit / real, 4)
+                    pg.evaluate("(function(z,h){var b=document.body;b.style.zoom=z;b.style.width=(700/z)+'px';b.style.minHeight=(h/z)+'px';document.documentElement.style.width=(700/z)+'px';})(" + str(z) + "," + str(limit) + ")")
+                    print(name, "내용이 넘쳐 축소:", real, "->", limit, flush=True)
+                    real = limit
+                final_h = h if h == 700 else max(h, min(real, limit))
+                pg.set_viewport_size({"width": 700, "height": final_h})
+                pg.screenshot(path=img_dir + "/" + name, clip={"x": 0, "y": 0, "width": 700, "height": final_h})
                 p["images"].append(name)
             br.close()
     except Exception as e:
